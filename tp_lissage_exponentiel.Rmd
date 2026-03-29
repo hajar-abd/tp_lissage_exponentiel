@@ -1,0 +1,913 @@
+---
+title: "TP 1 - Outils et lissage exponentiel"
+author: "Hajar Abdaoui"
+date: "2026-02-25"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+email: "hajar.abdaoui.etu@univ-lille.fr"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE, 
+	fig.align = "center",
+  fig.height = 4
+)
+```
+
+# 1. Introduction aux outils d’analyses
+
+**1. Charger le jeu de données, créer un objet de type série temporelle**
+
+Le fichier varicelleb.csv contient le nombre mensuel de cas de varicelle à New York à partir du mois de janvier 1931 au mois de juin 1972. Ainsi, chaque ligne correspond à une année (12 mois), sauf la dernière qui ne contient que 6 mois (janvier à juin 1972).
+
+Pour pouvoir appliquer ensuite les outils d’analyse graphique (plot.ts, acf, window) et les méthodes de lissage exponentiel (HoltWinters), il est nécessaire de construire un objet de classe ts (série temporelle), avec une fréquence annuelle de 12 (mensuelle), une date de début fixée à janvier 1931 ainsi qu'une date de fin fixée à juin 1972. 
+
+L'importation doit également gérer la mise en forme du fichier : 
+
+- lecture du fichier : avec la fonction  read.csv2 car le fichier est structuré avce un spérateur de type point-virgule, en fixant  header = FALSE car le fichier ne contient pas de noms de colonnes. Les fonctions  str et  summary permettent de vérifier la structure du tableau importé. 
+
+- passage au format vectoriel : les données sont initialement organisées en tableau (années × mois).
+Pour créer une série temporelle, on doit obtenir un vecteur ordonné chronologiquement.  t() transpose le tableau pour lire les valeurs année par année.  unlist() transforme le tableau en vecteur.  as.numeric() convertit les valeurs en format numérique.
+
+- suppression des valeurs manquantes : (NA) correspondant aux mois inexistants de la dernière année avec la fonction  !is.na()
+
+- création de l'objet série temporelle : la fonction  ts() permet de créer une série temporelle régulière. On y indique la fréquence avec le paramètre  frequency = 12, et les dates de début et fin avec les paramètres  start = c(1931,1) et  end = c(1972,6). 
+
+Cette étape est essentielle car tous les outils d’analyse graphique ( plot.ts, acf, window) et les méthodes de lissage exponentiel (HoltWinters) nécessitent un objet de classe ts.
+
+```{r import data and preprocessing, message=FALSE, warning=FALSE, include=FALSE}
+# ############################################################
+# Question 1 : chargement des données et création d'un objet ts
+# ############################################################
+
+# 1) Chargement du fichier
+data <- read.csv2("varicelleb.csv", header = FALSE)
+
+# Vérification rapide de la structure
+str(data)
+summary(data)
+
+# 2) Transformation du tableau en vecteur chronologique
+# t(data) permet de lire les données ligne par ligne (année après année)
+data_vector <- as.numeric(unlist(t(data)))
+
+# Suppression des valeurs manquantes (dernière année incomplète)
+data_cleaned <- data_vector[!is.na(data_vector)]
+
+# 3) Création de la série temporelle mensuelle
+ts_data <- ts(data_cleaned,
+              frequency = 12,        # 12 mois par an
+              start = c(1931, 1),    # Janvier 1931
+              end = c(1972, 6))      # Juin 1972
+
+```
+
+```{r import and preprocessing check, echo=FALSE, message=FALSE, warning=FALSE}
+# Vérification
+cat("L'objet ts_data est de classe :", class(ts_data), ".\n")
+
+cat("La série débute en", start(ts_data)[1],
+    "mois", start(ts_data)[2], ".\n")
+
+cat("La série se termine en", end(ts_data)[1],
+    "mois", end(ts_data)[2], ".\n")
+
+cat("La fréquence est de", frequency(ts_data),
+    "observations par an (périodicité mensuelle).\n")
+
+cat("La série contient", length(ts_data),
+    "observations au total.\n")
+```
+
+Après vérification, on remarque bien que notre objet ts_data est une série temporelle de janvier 1931 à juin 1972 de fréquence mensuelle (12 mois). 
+
+**2. Représenter graphiquement la série, effectuer une analyse qualitative, c’est-à-dire repérer d’éventuelles tendance et/ou saisonnalité (un phénomène qui semble se produire de façon séquentielle).**
+
+
+La première étape d’une analyse de série temporelle consiste à visualiser les données afin d’identifier d’éventuelles structures : tendance, saisonnalité ou variations atypiques. Pour cela, nous utilisons la fonction  plot(). 
+
+Le graphique ci-dessous permet de visualiser l’évolution mensuelle du nombre de cas sur l’ensemble de la période étudiée.
+
+```{r plot_ts, echo=FALSE, message=FALSE, warning=FALSE}
+# Représentation graphique de la série
+plot(ts_data,
+     main = "Nombre mensuel de cas de varicelle à New York (1931-1972)",
+     xlab = "Année",
+     ylab = "Nombre de cas",
+     col = "darkblue",
+     lwd = 1.5)
+grid()
+```
+
+À l'observation du graphique, plusieurs éléments peuvent être décrits :
+
+- une forte variabilité intra-annuelle
+- des pics très marqués qui se répètent régulièrement
+- des creux très prononcés entre les pics. 
+ 
+Ainsi, visuellement, on décrit que la dynamique est non stationnaire. 
+ 
+De plus, on remarque notamment la répétition régulière des pics d’incidence. Les pics apparaissent à intervalles approximativement annuels, ce qui suggère une saisonnalité de période 12 mois.
+
+Les éléments visuels en faveur d’une saisonnalité sont :
+
+- des cycles très réguliers,
+- une structure quasi périodique,
+- des amplitudes comparables d’une année à l’autre.
+
+Visuellement, cette répétition séquentielle correspond à la définition d’un phénomène saisonnier.
+
+L’examen du graphique suggère que :
+
+- entre 1931 et environ la fin des années 1940, les amplitudes des pics semblent relativement élevées.
+- Un pic particulièrement important apparaît vers la fin des années 1940.
+- À partir des années 1955-1960, l’amplitude des pics semble diminuer progressivement.
+- En fin de période (années 1965-1972), les pics semblent globalement moins élevés que dans les décennies précédentes.
+
+Cela suggère l’existence possible d’une tendance décroissante à long terme, notamment sur l’intensité des épidémies.
+Cependant, cette tendance n’est pas strictement linéaire : la série présente plutôt une évolution en plusieurs phases.
+**Point important** : Nous avons ici une analyse descriptive visuelle uniquement. La suite du TP permettra de vérifier objectivement ces observations à l'aide d'outils statistiques. 
+
+**3. Tracer sur un même graphique les évolutions mensuelles du nombre de cas de varicelles pour chaque année. **
+
+Afin d’examiner plus finement la structure saisonnière de la série, il est pertinent de représenter les évolutions mensuelles du nombre de cas de varicelle pour chaque année sur un même graphique.
+
+Ainsi, le graphique ci-dessous représente l'évolution mensuelle du nombre de cas de varicelles par année avec en abscisse, les mois de l’année et, en ordonnée, le nombre de cas observés, en traçant une courbe distincte pour chaque année.
+
+Afin d’assurer la comparabilité des profils annuels, seules les années complètes (1931-1971) sont retenues, l’année 1972 étant incomplète (six mois seulement).
+
+```{r month_plot}
+# Transformation en matrice : 1 ligne = 1 année, 12 colonnes = 12 mois
+# On exclut les 6 derniers mois de 1972 pour garder des années complètes
+
+ts_complete <- window(ts_data, end = c(1971, 12))
+
+mat_year <- matrix(ts_complete,
+                   ncol = 12,
+                   byrow = TRUE)
+mois <- c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")
+
+# Tracé des profils mensuels
+matplot(1:12, t(mat_year),
+        type = "l",
+        lty = 1,
+        col = "grey",
+        xaxt = "n",
+        xlab = "Mois",
+        ylab = "Nombre de cas",
+        main = "Profils mensuels du nombre de cas par année")
+axis(1, at = 1:12, labels = mois)
+grid()
+```
+
+La superposition des profils mensuels met en évidence une structure saisonnière extrêmement marquée.
+
+On observe que :
+
+- les cas augmentent progressivement de janvier à mars-avril.
+- Un pic d’incidence est atteint systématiquement au printemps (principalement mars-avril).
+- Une décroissance rapide intervient à partir de mai.
+- Un minimum est atteint durant l’été (juillet-septembre).
+- Une légère remontée est observable en fin d’année (novembre-décembre).
+
+Cette forme est remarquablement stable d’une année à l’autre, ce qui confirme l’existence d’une saisonnalité annuelle régulière.
+Bien que les amplitudes diffèrent selon les années, la forme générale du cycle est très similaire :
+
+- pic concentré sur la même période,
+- creux estival systématique,
+- reprise modérée en fin d’année.
+
+Cette stabilité suggère que la saisonnalité est structurelle et non accidentelle. Autrement dit, le phénomène se reproduit de manière séquentielle et régulière, ce qui correspond à la définition d’un effet saisonnier.
+
+Si la forme est stable, l’amplitude des pics varie :
+
+- certaines années présentent des pics dépassant 2500 cas.
+- D’autres années restent en dessous de 1500 cas.
+- Les minima estivaux restent relativement proches de zéro pour presque toutes les années.
+
+Cela suggère :
+
+- une variation interannuelle de l’intensité épidémique,
+- une amplitude saisonnière variable,
+- une possible évolution de la dynamique épidémique au cours du temps.
+
+**4. Tracer sur un même graphique l’évolution annuelle du nombre de cas de varicelles.**
+
+Afin d’analyser l’évolution de long terme de l’épidémie, il est pertinent d’agréger les données mensuelles en données annuelles.
+
+L’idée consiste à :
+
+- sommer les 12 observations mensuelles de chaque année,
+- obtenir une série annuelle,
+- tracer son évolution au cours du temps.
+
+Cette transformation permet :
+
+- d’éliminer la saisonnalité intra-annuelle,
+- de mettre en évidence une éventuelle tendance globale,
+- d’analyser les cycles épidémiques interannuels.
+
+L’année 1972 étant incomplète (6 mois seulement), elle est exclue de l’analyse afin de conserver uniquement des années complètes comparables à l'aide de la fonction  window().
+
+```{r plot_annuel}
+# On conserve uniquement les années complètes (1931-1971)
+ts_complete <- window(ts_data, end = c(1971, 12))
+
+# Agrégation annuelle par somme
+annual_cases <- aggregate(ts_complete, nfrequency = 1, FUN = sum)
+
+# Visualisation
+plot(annual_cases,
+     type = "l",
+     col = "darkblue",
+     lwd = 2,
+     xlab = "Année",
+     ylab = "Nombre annuel de cas",
+     main = "Évolution annuelle du nombre de cas de varicelle (1931-1971)")
+
+grid()
+```
+
+L’agrégation annuelle permet de supprimer la saisonnalité intra-annuelle et de se concentrer sur la dynamique de long terme.
+
+Le graphique met en évidence une évolution non monotone du nombre annuel de cas sur la période 1931-1971.
+
+On distingue visuellement trois phases principales.
+
+*Période 1931 - milieu/fin des années 1940*
+
+Durant cette période, le nombre annuel de cas oscille autour d’un niveau relativement élevé (environ 9 000 à 12 000 cas). Les fluctuations interannuelles sont importantes. Aucune tendance clairement croissante ou décroissante ne se dégage.
+
+La dynamique semble dominée par des cycles épidémiques d’amplitude élevée.
+
+*Période milieu/fin des années 1940-milieu des années 1950*
+
+On observe :
+
+- une alternance marquée entre années à forte incidence et années plus modérées.
+- Des pics annuels pouvant dépasser 12 000 cas.
+- Une forte variabilité interannuelle.
+
+Cette période semble correspondre à une phase d’instabilité épidémique plus marquée.
+
+*Période mileu/fin des années 1950-1971*
+
+À partir de la fin des années 1950, un changement de dynamique apparaît le niveau annuel décroît progressivement. Les valeurs passent d’environ 9 000-10 000 cas à environ 4 000-5 000 cas en fin de période. Les fluctuations interannuelles semblent également légèrement moins amples.
+
+Cette phase suggère l’existence d’une tendance décroissante de long terme.
+
+**5. Les Deux questions précédentes permettent-elles d’améliorer vos conclusions de la question 2 ?**
+
+Les représentations et interprétations réalisées aux questions 3 et 4 permettent de préciser les conclusions issues de l’analyse globale (question 2).
+
+La visualisation des profils mensuels confirme clairement l’existence d’une saisonnalité annuelle stable, dont la forme reste constante au fil des années.
+
+L’agrégation annuelle met quant à elle en évidence une évolution de long terme plus lisible, notamment une tendance décroissante à partir de la fin des années 1950.
+
+Ainsi, ces analyses complémentaires permettent de mieux distinguer les effets saisonniers de la dynamique interannuelle et renforcent les conclusions qualitatives initiales.
+
+**6. Construire par année un tableau donnant la moyenne, l’écart-type, le minimum, le maximum et la somme totale du nombre de cas de varicelles.** 
+
+Afin d’analyser plus finement la dynamique interannuelle, on calcule pour chaque année :
+
+- la moyenne mensuelle,
+- l’écart-type mensuel,
+- le minimum mensuel,
+- le maximum mensuel,
+- la somme annuelle totale.
+
+Ces indicateurs permettent d’évaluer :
+
+- le niveau moyen d’incidence,
+- la dispersion intra-annuelle,
+- l’amplitude saisonnière,
+- l’évolution globale de l’intensité épidémique.
+
+L’année 1972 étant incomplète, elle est exclue afin de conserver uniquement des années comparables (1931-1971).
+Le tableau ci-dessous présente, pour chaque année, cinq indicateurs descriptifs calculés à partir des 12 observations mensuelles : moyenne, écart-type, minimum, maximum et somme annuelle. Seules les 5 première années sont représentées ci-dessous par souci de taille. Le tableau complet est représenté en annexe pour plus de détails. 
+
+```{r table_stats_annual}
+# Conserver uniquement les années complètes
+ts_complete <- window(ts_data, end = c(1971, 12))
+
+# Conversion en matrice (1 ligne = 1 année, 12 colonnes = 12 mois)
+mat_year <- matrix(ts_complete,
+                   ncol = 12,
+                   byrow = TRUE)
+
+# Création du tableau de statistiques annuelles
+annual_stats <- data.frame(
+  Annee = 1931:1971,
+  Moyenne = rowMeans(mat_year),
+  Ecart_type = apply(mat_year, 1, sd),
+  Minimum = apply(mat_year, 1, min),
+  Maximum = apply(mat_year, 1, max),
+  Somme = rowSums(mat_year)
+)
+
+# Affichage
+head(annual_stats)
+
+```
+
+
+
+**A partir de ce jeu de données :**
+
+**(a) Tracer sur des graphiques différents, la courbe par année de chacune des statistiques**
+
+On trace ensuite chaque statistique séparément. 
+
+```{r plot_stats_individual}
+par(mfrow = c(2,3))
+
+# Moyenne annuelle
+plot(annual_stats$Annee, annual_stats$Moyenne,
+     type = "l", col = "blue", lwd = 2,
+     xlab = "Année", ylab = "Moyenne mensuelle",
+     main = "Évolution de la moyenne annuelle")
+
+# Ecart-type annuel
+plot(annual_stats$Annee, annual_stats$Ecart_type,
+     type = "l", col = "red", lwd = 2,
+     xlab = "Année", ylab = "Écart-type mensuel",
+     main = "Évolution de l'écart-type annuel")
+
+# Minimum annuel
+plot(annual_stats$Annee, annual_stats$Minimum,
+     type = "l", col = "darkgreen", lwd = 2,
+     xlab = "Année", ylab = "Minimum mensuel",
+     main = "Évolution du minimum annuel")
+
+# Maximum annuel
+plot(annual_stats$Annee, annual_stats$Maximum,
+     type = "l", col = "purple", lwd = 2,
+     xlab = "Année", ylab = "Maximum mensuel",
+     main = "Évolution du maximum annuel")
+
+# Somme annuelle
+plot(annual_stats$Annee, annual_stats$Somme,
+     type = "l", col = "black", lwd = 2,
+     xlab = "Année", ylab = "Nombre total annuel",
+     main = "Évolution de la somme annuelle")
+
+plot.new()
+par(mfrow = c(1,1))
+```
+
+L’examen du tableau des statistiques annuelles et des graphiques met en évidence une forte variabilité interannuelle du nombre de cas de varicelle sur la période 1931-1971.
+
+Les moyennes mensuelles et les sommes annuelles sont élevées jusqu’au milieu des années 1950, avec plusieurs années dépassant 12 000 cas annuels. À partir de la fin des années 1950, on observe une diminution progressive du niveau moyen d’incidence, confirmant l’existence d’une tendance décroissante de long terme.
+
+L’écart-type évolue globalement dans le même sens que la moyenne : il est plus élevé durant les années de forte incidence et diminue en fin de période. Cette relation suggère que la variabilité intra-annuelle dépend du niveau global de la série.
+
+Les maxima annuels suivent également cette dynamique décroissante, traduisant une réduction progressive de l’intensité des pics saisonniers.
+
+Ainsi, l’analyse descriptive confirme :
+
+- une forte variabilité interannuelle,
+
+- une tendance décroissante à partir de la fin des années 1950,
+
+- une diminution progressive de l’amplitude saisonnière
+
+**(b) Faire la statistique descriptive de chaque colonne et interpréter convenablement les résultats obtenus.**
+
+On réalise ensuite la statistique descriptive de chaque colonne.
+
+```{r stats_summary}
+summary(annual_stats)
+```
+La statistique descriptive des indicateurs annuels met en évidence une forte variabilité sur la période 1931-1971.
+
+La moyenne mensuelle annuelle est en moyenne de 732 cas, avec des valeurs comprises entre 303 et 1087 cas. L’écart interquartile (607 à 915) traduit une dispersion importante entre les années.
+
+L’écart-type annuel présente une moyenne de 539 cas, avec un maximum supérieur à 1000, indiquant que certaines années ont connu une variabilité intra-annuelle particulièrement marquée.
+
+Les minima mensuels restent faibles (médiane = 78), ce qui confirme l’existence de creux saisonniers prononcés. À l’inverse, les maxima peuvent atteindre 3058 cas, illustrant l’intensité des pics épidémiques durant certaines années.
+
+La somme annuelle moyenne est d’environ 8787 cas, avec un maximum de 13046 et un minimum de 3640, confirmant une forte amplitude interannuelle.
+
+Globalement, ces résultats confirment :
+
+- une variabilité interannuelle importante,
+- une dispersion intra-annuelle marquée,
+- une amplitude saisonnière élevée,
+- et une hétérogénéité notable entre années.
+
+**7.Afin de choisir entre un modèle additif et un modèle multiplicatif, nous utilisons une approche par régression linéaire simple. Construire un modèle de régression de l’écart-type annuel en fonction de la moyenne annuelle.**
+
+**(a)Analyser la pertinence globale du modèle et proposer un test permettant d’évaluer la pertinence du modèle. On prendra un risque de première espèce à 5%.**
+
+**(b) Analyser la normalité des résidus du modèle.**
+
+**(c) Tester la significativité de la pente, et décider entre un modèle additif ou multiplicatif.**
+
+Nous construisons un modèle de régression linéaire à l'aide la fonction  lm()entre l'écart-type et la moyenne annuelle. 
+
+```{r lm_model_creation}
+# Modèle de régression linéaire
+model_reg <- lm(Ecart_type ~ Moyenne, data = annual_stats)
+```
+
+Le test global de Fisher permet d’évaluer si le modèle explique significativement la variabilité de l’écart-type annuel.
+
+Hypothèses :
+
+- H₀ : β₁ = 0 (la moyenne n’explique pas l’écart-type)
+- H₁ : β₁ ≠ 0
+
+L’hypothèse de normalité des résidus est évaluée à l’aide d’un graphique Q-Q plot et du test de Shapiro-Wilk.
+
+```{r lm_model_analysis}
+summary(model_reg)
+anova(model_reg)
+# Graphique QQ-plot
+qqnorm(residuals(model_reg))
+qqline(residuals(model_reg), col = "red")
+# Test de Shapiro-Wilk
+shapiro.test(residuals(model_reg))
+```
+
+Pour le test de Fisher, nous avons obtenu F = 264.34 et p-value < 2.2 × 10⁻¹⁶. 
+
+Avec un risque α = 5 %, la p-value est largement inférieure à 0.05. On rejette donc H₀.
+
+Conclusion :
+
+Le modèle est globalement hautement significatif. La moyenne annuelle explique une part importante de la variabilité de l’écart-type.
+
+Le coefficient de détermination R² = 0.871 indique que 87 % de la variabilité de l’écart-type est expliquée par la moyenne annuelle, ce qui traduit une relation très forte.
+
+Le Q-Q plot montre que la majorité des points est proche de la droite théorique. De légères déviations apparaissent en extrémité de distribution. Aucun écart majeur systématique n’est observé. Visuellement, l’hypothèse de normalité semble raisonnablement satisfaisante. Le test de Shapiro-Wilk pour évaluer la normalité des résidus nous donne W = 0.964 et une p-value = 0.2198. Avec un risque α = 5 %, la p-value est supérieure à 0.05. On ne rejette donc pas l’hypothèse de normalité des résidus. 
+
+Le modèle de régression est :
+
+- Globalement significatif (test de Fisher, p < 2 × 10⁻¹⁶),
+- Doté d’une pente significativement positive,
+- Associé à des résidus compatibles avec l’hypothèse de normalité.
+
+La forte relation positive entre moyenne annuelle et écart-type annuel indique que la dispersion augmente avec le niveau.
+
+Ainsi, l’hypothèse d’un modèle multiplicatif est retenue plutôt qu’un modèle additif.
+
+**8. Tracer les fonctions d’auto-corrélation (ACF) et auto-corrélation partielle (PACF) de la série.**
+
+Les fonctions d’autocorrélation permettent d’analyser la dépendance temporelle de la série :
+
+L’ACF mesure la corrélation entre Xt et Xt-1. On la représente à l'aide de la fonction  acf() et le paramètre  lag = 60`. 
+La PACF mesure la corrélation partielle au retard k, en contrôlant les retards intermédiaires. On la représente à l'aide de la fonction  pacf() et aussi du paramètre  lag = 60. 
+
+Elles permettent notamment :
+
+- de détecter une saisonnalité,
+- d’identifier une éventuelle non-stationnarité,
+- de guider le choix de modèles ultérieurs.
+
+```{r acf_pacf}
+# ACF
+par(mfrow=c(1,2))
+acf(ts_data,
+    main = "ACF", 
+    lag.max = 60)
+
+# PACF
+pacf(ts_data,
+     main = "PACF", 
+     lag.max = 60)
+par(mfrow=c(1,1))
+```
+
+En excluant le lag 0, l’ACF montre des autocorrélations significatives sur plusieurs retards (Lag), ce qui indique une dépendance temporelle persistante.
+
+Une alternance de corrélations positives et négatives selon les retards, formant un motif oscillatoire.
+
+Des pics marqués aux retards proches des multiples de 12 (environ 12, 24, 36, 48, 60 mois), ce qui met en évidence une saisonnalité annuelle forte.
+
+Ainsi, l’ACF confirme que la série est fortement saisonnière et que la dépendance ne disparaît pas immédiatement avec le temps.
+
+En excluant le lag 0, la PACF met en évidence un nombre limité de retards significatifs comparativement à l’ACF, ce qui suggère que la dépendance directe (conditionnelle aux retards intermédiaires) est portée par quelques retards principaux.
+
+On remarque aussi des retards saisonniers significatifs (autour de 12 et ses multiples), ce qui confirme la saisonnalité annuelle observée dans l’ACF.
+
+L’analyse ACF/PACF indique :
+
+- une saisonnalité annuelle nette (signal aux multiples de 12),
+- une dépendance temporelle structurée, cohérente avec une série saisonnière,
+- la nécessité d’utiliser ensuite des méthodes prenant en compte la saisonnalité (par exemple Holt-Winters).
+
+On peut donc indiquer que la série ne semble pas stationnaire au vu des fonctions d’autocorrélation.
+
+# 2. Lissage exponentiel
+
+## 2.1 Données de varicelles à New-York de 1931 à 1972
+
+**1. Construire le modèle de lissage saisonnier multiplicatif de Holt-Winter. Calculer l’erreur quadratique,l’erreur quadratique moyenne, et tester la prédiction des données de 1970 à 1972 en utilisant celles de 1931 à 1969.**
+
+On souhaite évaluer la capacité prédictive d’un modèle de Holt-Winters saisonnier multiplicatif sur la période 1970-1972, en l’ajustant uniquement sur les données 1931-1969. 
+
+La démarche consiste donc à :
+
+- découper la série en un ensemble d’apprentissage (1931-1969) et un ensemble test (1970-1972)
+- ajuster un modèle Holt-Winters multiplicatif sur l’ensemble d’apprentissage
+- prévoir la période test
+- calculer l’erreur quadratique (somme des carrés des erreurs) et l’erreur quadratique moyenne sur la période test
+
+Comme 1972 est incomplète dans le fichier (jusqu’à juin), la période test correspond ici à janvier 1970 jusque juin 1972.
+
+Le modèle de Holt-Winters saisonnier multiplicatif est ajusté sur la période 1931-1969, puis utilisé pour prévoir les 30 mois de janvier 1970 à juin 1972. L’horizon de prévision est donc de 30 mois.
+
+Les performances du modèle sur la période test sont mesurées à l’aide de l’erreur quadratique (EQ), correspondant à la somme des carrés des écarts entre valeurs observées et valeurs prévues ; et de l’erreur quadratique moyenne (EQM), correspondant à la moyenne de ces carrés.
+
+Ces deux indicateurs quantifient l’écart global entre le modèle et les données observées sur l’horizon de prévision retenu.
+
+```{r holtwinters_model}
+
+############################################################
+# Holt-Winters multiplicative seasonal smoothing + evaluation
+# Train: 1931-01 to 1969-12
+# Test : 1970-01 to 1972-06 (available data)
+#############################################################
+
+# 1) Split train / test
+train <- window(ts_data, end = c(1969, 12))
+test  <- window(ts_data, start = c(1970, 1))  # goes until 1972-06 in your dataset
+
+h <- length(test)  # forecast horizon in months
+
+# 2) Fit Holt-Winters multiplicative model
+# Note: multiplicative seasonality requires strictly positive values
+model_hw_mul <- HoltWinters(train, seasonal = "mul")
+
+# 3) Forecast the test period
+fc <- predict(model_hw_mul, n.ahead = h)
+
+# 4) Compute forecast errors on the test set
+err <- as.numeric(test) - as.numeric(fc)
+
+# Squared error (per time point)
+se <- err^2
+
+# Quadratic error (sum of squared errors)
+EQ <- sum(se)
+
+# Mean quadratic error
+EQM <- mean(se)
+
+# Display results 
+cat("Horizon de prévision (mois) :", h, "\n")
+cat("Erreur quadratique (EQ = somme des erreurs au carré) :", round(EQ, 2), "\n")
+cat("Erreur quadratique moyenne (EQM) :", round(EQM, 2), "\n")
+```
+
+L’EQM indique qu’en moyenne, le carré de l’erreur mensuelle est de l’ordre de 1.83 × 10⁵. Cette valeur traduit un écart non négligeable entre observations et prévisions sur la période 1970-1972.
+
+Compte tenu du niveau des données (pics pouvant dépasser 1000 cas), cette erreur reste cohérente avec l’amplitude importante de la série et sa variabilité saisonnière.
+L’analyse graphique détaillée des écarts entre valeurs observées et prévues sera réalisée à la question suivante.
+
+**2. Représenter sur un même graphique les données mensuelles observées et prévues de 1970 à 1972. Qu’en pensez-vous ?**
+
+```{r plot_holtwinters_model}
+# Série observée (1970-01 à 1972-06)
+obs_test <- window(ts_data, start = c(1970, 1))
+
+# Prévisions
+prev_test <- ts(fc, start = c(1970, 1), frequency = 12)
+
+# Définition des bornes Y en prenant le max des deux séries
+ylim_range <- range(c(obs_test, prev_test))
+
+# Tracé corrigé
+plot(obs_test,
+     type = "l",
+     lwd = 2,
+     ylim = ylim_range,
+     xlab = "Année",
+     ylab = "Nombre de cas",
+     main = "Observé vs Prévu (Holt-Winters multiplicatif) : 1970-1972")
+
+lines(prev_test, lwd = 2, lty = 2)
+
+legend("topright",
+       legend = c("Observé", "Prévu"),
+       lwd = 2,
+       lty = c(1, 2),
+       bty = "n")
+```
+
+Le modèle de Holt-Winters multiplicatif reproduit correctement la structure saisonnière de la série. Les périodes de hausse et de baisse sont bien synchronisées avec les observations : les pics printaniers et les creux estivaux apparaissent aux mêmes moments.
+
+Cependant, on observe un écart systématique sur l’amplitude. Les pics sont régulièrement surestimés par le modèle. Les creux sont globalement bien reproduits. L’amplitude des fluctuations prévues semble plus élevée que celle observée.
+
+Cela suggère que le modèle conserve une dynamique saisonnière plus forte que celle réellement observée sur la période 1970-1972. Autrement dit, il extrapole une intensité épidémique plus importante que celle effectivement constatée en fin de période.
+
+Cette surestimation est cohérente avec la tendance décroissante mise en évidence précédemment : le modèle, calibré sur des années plus anciennes (1931-1969), anticipe des niveaux plus élevés que ceux observés dans les années 1970.
+
+En conclusion, le modèle reproduit correctement la saisonnalité mais surestime l’intensité des pics en fin de période, ce qui limite sa précision prédictive sur cet horizon.
+
+**3. Reprendre les questions 1 et 2 en utilisant respectivement les lissages exponentiels simple et double.**
+
+On va donc comparer les performances du lissage exponentiel simple (sans tendance ni saisonnalité) et du lissage exponentiel double (avec tendance, sans saisonnalité) sur la même période test (1970-1972), en utilisant les données 1931-1969 pour l’apprentissage.
+
+```{r model_lissage}
+# ##############################
+# 1) LISSAGE EXPONENTIEL SIMPLE
+# ##############################
+
+model_simple <- HoltWinters(train,
+                            beta = FALSE,
+                            gamma = FALSE)
+
+fc_simple <- predict(model_simple, n.ahead = h)
+
+err_simple <- as.numeric(test) - as.numeric(fc_simple)
+EQ_simple <- sum(err_simple^2)
+EQM_simple <- mean(err_simple^2)
+
+cat("EQ simple :", round(EQ_simple, 2), "\n")
+cat("EQM simple :", round(EQM_simple, 2), "\n")
+
+# ##############################
+# 2) LISSAGE EXPONENTIEL DOUBLE
+# ##############################
+
+model_double <- HoltWinters(train,
+                            gamma = FALSE)
+
+fc_double <- predict(model_double, n.ahead = h)
+
+err_double <- as.numeric(test) - as.numeric(fc_double)
+EQ_double <- sum(err_double^2)
+EQM_double <- mean(err_double^2)
+
+cat("EQ double :", round(EQ_double, 2), "\n")
+cat("EQM double :", round(EQM_double, 2), "\n")
+```
+
+L’EQM montre que le modèle simple obtient la plus faible erreur quadratique moyenne.Le modèle multiplicatif est intermédiaire. Le modèle double est le moins performant.
+
+Le modèle double présente une erreur plus élevée, probablement en raison d’une tendance estimée qui ne reflète pas correctement la dynamique sur 1970-1972.
+
+```{r plot_model_lissage_simple}
+par(mfrow=c(1,2))
+prev_simple <- ts(fc_simple, start = c(1970, 1), frequency = 12)
+ylim_range <- range(c(obs_test, prev_simple))
+
+plot(obs_test,
+     type = "l",
+     lwd = 2,
+     ylim = ylim_range,
+     main = "Lissage exponentiel simple",
+     xlab = "Année",
+     ylab = "Nombre de cas")
+
+lines(prev_simple, lwd = 2, lty = 2)
+legend("topright", legend = c("Observé", "Prévu simple"),
+       lwd = 2, lty = c(1,2), bty = "n")
+
+prev_double <- ts(fc_double, start = c(1970, 1), frequency = 12)
+ylim_range <- range(c(obs_test, prev_double))
+
+plot(obs_test,
+     type = "l",
+     lwd = 2,
+     ylim = ylim_range,
+     main = "Lissage exponentiel double",
+     xlab = "Année",
+     ylab = "Nombre de cas")
+
+lines(prev_double, lwd = 2, lty = 2)
+legend("topright", legend = c("Observé", "Prévu double"),
+       lwd = 2, lty = c(1,2), bty = "n")
+par(mfrow=c(1,1))
+```
+
+Sur les graphiques, on remarque que le lissage exponentiel simple produit des prévisions constantes. Il ne prend en compte ni la tendance ni la saisonnalité, ce qui explique que la courbe prévue soit une droite horizontale.
+
+Le lissage exponentiel double intègre une tendance mais ignore la saisonnalité. La prévision prend donc la forme d’une droite décroissante, cohérente avec la tendance globale estimée sur la période d’apprentissage.
+
+En revanche, aucun des deux modèles ne reproduit la structure saisonnière marquée observée dans les données.
+
+**4. Quelle méthode de lissage retenez-vous ? justifier.**
+
+Parmi les trois méthodes testées (lissage exponentiel simple, double et Holt-Winters multiplicatif), le modèle à retenir est le lissage saisonnier multiplicatif de Holt-Winters.
+
+Bien que le lissage exponentiel simple présente l’erreur quadratique moyenne la plus faible sur la période test, il ne modélise ni la tendance ni la saisonnalité. Il produit des prévisions constantes, ce qui est structurellement inadapté à une série présentant une forte composante saisonnière.
+
+Le lissage exponentiel double intègre une tendance mais ignore la saisonnalité. Il génère une prévision linéaire décroissante qui ne reflète pas la dynamique périodique observée dans les données.
+
+Le modèle de Holt-Winters multiplicatif est le seul à prendre en compte explicitement la saisonnalité annuelle, caractéristique centrale de la série. Il reproduit correctement la structure cyclique observée, même si l’amplitude des pics est légèrement surestimée sur la période 1970-1972.
+
+Ainsi, malgré une erreur moyenne légèrement supérieure à celle du modèle simple, le modèle multiplicatif est le plus cohérent avec la nature des données et les propriétés statistiques identifiées précédemment (relation entre moyenne et variance, saisonnalité marquée).
+
+En conséquence, le modèle de Holt-Winters saisonnier multiplicatif est retenu.
+
+## 2.2 Données de la concentration en co2 du volcan Mauna Loa (Hawaï) de 1959 à 1997
+
+Le jeu de données co2 contenue dans R contient les concentrations de co2 à proximité du volcan Mauna Loa (Hawaï) de 1959 à 1997, il s'agit d'un objet de type série temporelle. 
+
+**1. Représenter graphiquement la série de données, quel est le modèle de lissage qui vous semble le plus approprié ?**
+
+```{r maunaloa_data_analysis}
+data(co2)
+cat("L'objet co2 est de classe :", class(co2), ".\n")
+
+cat("La série débute en", start(co2)[1],
+    "mois", start(co2)[2], ".\n")
+
+cat("La série se termine en", end(co2)[1],
+    "mois", end(co2)[2], ".\n")
+
+cat("La fréquence est de", frequency(co2),
+    "observations par an (périodicité mensuelle).\n")
+
+cat("La série contient", length(co2),
+    "observations au total.\n")
+```
+
+```{r ts_plot_maunaloa}
+plot(co2,
+     type = "l",
+     lwd = 2,
+     xlab = "Année",
+     ylab = "Concentration de CO2 (ppm)",
+     main = "Concentration mensuelle de CO2 - Mauna Loa (1959-1997)")
+```
+
+La série des concentrations mensuelles de CO₂ à Mauna Loa entre 1959 et 1997 présente deux caractéristiques majeures :
+
+- Une tendance croissante sur l’ensemble de la période : la concentration en CO2 augmente régulièrement de ~315 ppm en 1959 à ~370 ppm en 1997, de façon quasi linéaire.
+
+- Une saisonnalité très régulière : on remarque des oscillations régulières chaque année (dues aux cycles végétatifs). Et surtout, l'amplitude de ces oscillations reste constante au fil du temps (les "vagues" ne grandissent pas).
+
+Ces deux observations mènent directement au choix :
+
+- Tendance + saisonnalité --> Holt-Winters (et non lissage simple ou double)
+
+- Amplitude constante --> version additive (et non multiplicative, qui serait choisie si l'amplitude augmentait proportionnellement à la tendance)
+
+Le modèle de lissage le plus approprié est donc le lissage exponentiel de Holt-Winters additif.
+
+**2. Afin de valider ce modèle, tester la prédiction des données de 1990 à 1997 en utilisant celles de 1959 à 1989. Si cela vous semble graphiquement correct, utilisez cette méthode pour prédire les concentrations en co2 de 1993 à 2003. Sinon, tester d’autres méthodes de lissage exponentiel.**
+
+On ajuste donc à l'aide de la fonction  HoltWinters() et du paramètre  seasonal = "additive"le modèle Holt-Winters additif sur les données d'entraînement, puis à l'aide de la fonction  predict(), on teste la prédiction des données de 1990 à 1997 (96 mois de données test) en utilisant celles de de 1959 à 1989. 
+
+```{r prediction_model}
+# Découpage : apprentissage 1959-1989, test 1990-1997
+co2_train <- window(co2, start = c(1959, 1), end = c(1989, 12))
+co2_test  <- window(co2, start = c(1990, 1), end = c(1997, 12))
+
+hw_model <- HoltWinters(co2_train, seasonal = "additive")
+# Prédiction sur 8 ans (96 mois) = période 1990-1997
+pred_validation <- predict(hw_model, n.ahead = 96, prediction.interval = TRUE)
+```
+
+```{r plot_model_prediction}
+# Visualisation de la validation
+plot(hw_model,
+     predicted.values = pred_validation,
+     main = "Validation Holt-Winters : prédiction 1990-1997",
+     ylab = "CO2 (ppm)", xlab = "Année")
+lines(co2_test, col = "red", lwd = 2)
+legend("topleft",
+       legend = c("Données réelles (test)", "Prédiction", "IC 95%"),
+       col = c("red", "blue", "grey"),
+       lwd = c(2, 1, 1))
+
+# Calcul des erreurs de prédiction
+erreurs <- co2_test - pred_validation[, "fit"]
+
+errors <- as.numeric(co2_test) - as.numeric(pred_validation)
+
+EQ  <- sum(errors^2)
+EQM <- mean(errors^2)
+cat("EQ  :", round(EQ, 3), "\n")
+cat("EQM :", round(EQM, 3), "\n")
+cat("RMSE validation :", round(sqrt(mean(erreurs^2)), 4), "ppm\n")
+cat("MAE  validation :", round(mean(abs(erreurs)), 4), "ppm\n")
+```
+Les indicateurs numériques indiquent une bonne performance prédictive.
+
+Le graphique de validation met en regard les valeurs réelles observées entre 1990 et 1997 (courbe rouge) avec les prédictions issues du modèle de Holt-Winters additif entraîné sur la période 1959-1989 (courbe bleue), accompagnées de leur intervalle de confiance à 95% (bandes cyan).
+
+Plusieurs constats s'imposent :
+
+- Suivi de la tendance : Le modèle reproduit fidèlement la trajectoire ascendante de la concentration en CO2 sur la période de validation. La pente de la prédiction est cohérente avec celle observée, ce qui confirme que le paramètre β de lissage de la tendance a correctement capturé la dynamique linéaire de la série sur la période d'apprentissage.
+
+- Capture de la saisonnalité : Les oscillations saisonnières annuelles sont bien restituées par le modèle, tant en phase qu'en amplitude. Ceci valide le choix du modèle additif : l'amplitude des fluctuations saisonnières étant restée stable sur toute la période, un modèle multiplicatif n'aurait pas apporté de gain.
+
+- Couverture par l'intervalle de confiance : L'ensemble de la courbe rouge se situe à l'intérieur des bandes de confiance à 95%, ce qui indique une bonne calibration probabiliste du modèle et l'absence de biais systématique notable sur l'horizon de prédiction.
+
+Bien que la validation soit visuellement satisfaisante, on observe un léger décalage vers le bas de la prédiction par rapport aux valeurs réelles en fin de période (1995-1997), suggérant une très légère sous-estimation de la tendance à long terme. Cela est attendu dans un modèle de lissage exponentiel : le lissage atténue les variations récentes, et une accélération de la tendance après 1989 ne peut pas être anticipée à partir des données d'entraînement seules.
+
+La validation sur la période 1990-1997 est graphiquement concluante. Le modèle de Holt-Winters additif capture de manière satisfaisante les deux composantes structurelles de la série (tendance et saisonnalité) avec une précision suffisante pour justifier son utilisation en extrapolation. Il est donc légitime de mobiliser ce modèle pour prédire les concentrations en CO2 sur la période 1998-2003.
+
+Le graphique ci-dessous présente la prédiction des concentrations en CO2 sur la période 1998-2003 (courbe verte) issue du modèle de Holt-Winters additif ré-entraîné sur l'intégralité de la série disponible (1959-1997), avec son intervalle de confiance à 95% (bandes grises pointillées). La courbe bleue représente les données réelles observées de 1993 à 1997, permettant d'apprécier la continuité entre la fin de la série d'apprentissage et le début de l'extrapolation.
+
+```{r predictions}
+# On ré-entraîne sur l'ensemble de la série (1959-1997)
+hw_final <- HoltWinters(co2, seasonal = "additive")
+
+# Prédiction sur 6 ans (72 mois) à partir de janvier 1998
+# pour couvrir jusqu'en décembre 2003
+pred_future <- predict(hw_final, n.ahead = 72, prediction.interval = TRUE)
+
+# Extraction de la fenêtre 1993-2003 pour la visualisation
+co2_depuis1993 <- window(co2, start = c(1993, 1))
+
+# Graphique final
+plot(co2_depuis1993,
+     xlim = c(1993, 2004),
+     ylim = c(355, 395),
+     main = "Prédiction CO2 : 1998-2003 (Holt-Winters additif)",
+     ylab = "CO2 (ppm)", xlab = "Année",
+     col = "steelblue", lwd = 1.5)
+lines(pred_future[, "fit"],   col = "darkgreen", lwd = 2)
+lines(pred_future[, "upr"],   col = "grey50",    lty = 2)
+lines(pred_future[, "lwr"],   col = "grey50",    lty = 2)
+legend("topleft",
+       legend = c("Données réelles (1993-1997)",
+                  "Prédiction (1998-2003)",
+                  "Intervalle de confiance 95%"),
+       col = c("steelblue", "darkgreen", "grey50"),
+       lwd = c(1.5, 2, 1), lty = c(1, 1, 2))
+```
+
+La transition entre les données observées (1993-1997) et les valeurs prédites (1998-2003) est visuellement fluide et sans rupture, tant sur le niveau que sur la dynamique saisonnière. Cela confirme que le modèle a correctement internalisé les structures de la série et qu'aucun artefact de bord n'affecte le début de la prédiction.
+
+Sur la tendance, le modèle prédit une poursuite de la hausse linéaire de la concentration en CO2. 
+
+Sur la saisonnalité, les oscillations annuelles sont maintenues avec une amplitude stable, conformément à l'hypothèse additive retenue. Le modèle reproduit fidèlement le schéma saisonnier caractéristique de la série de Mauna Loa, avec un pic printanier et un creux automnal.
+
+L'intervalle de confiance à 95% s'élargit progressivement au fil de l'horizon de prédiction, ce qui est un comportement statistiquement attendu pour un modèle de lissage exponentiel : l'incertitude cumulée augmente avec la distance temporelle par rapport aux dernières observations. 
+
+```{r validation}
+# ############################################################
+# Validation a posteriori : prédictions vs données réelles 1998-2003
+
+# 1. Charger les données réelles 1998-2003 depuis le fichier txt
+co2_raw <- read.table("maunaloa2Co2.txt", header = TRUE)
+co2_raw[co2_raw == -99.99] <- NA
+co2_real_2003 <- subset(co2_raw, Year >= 1998 & Year <= 2003)
+co2_monthly_real <- as.numeric(t(as.matrix(co2_real_2003[, 2:13])))
+co2_ts_real <- ts(co2_monthly_real, start = c(1998, 1), frequency = 12)
+# 2. Graphique : prédictions vs réel
+plot(pred_future[, "fit"],
+     col = "darkgreen", lwd = 2,
+     ylim = c(360, 385),
+     main = "Validation a posteriori : Holt-Winters vs données réelles (1998-2003)",
+     ylab = "CO2 (ppm)", xlab = "Année")
+lines(pred_future[, "upr"], col = "grey50", lty = 2)
+lines(pred_future[, "lwr"], col = "grey50", lty = 2)
+lines(co2_ts_real, col = "red", lwd = 2)
+legend("topleft",
+       legend = c("Données réelles (1998-2003)", "Prédiction HW", "IC 95%"),
+       col = c("red", "darkgreen", "grey50"),
+       lwd = c(2, 2, 1), lty = c(1, 1, 2))
+
+# 3. Métriques de performance sur 1998-2003
+# Aligner les deux séries (gérer les éventuels NA)
+fit_vals  <- as.numeric(pred_future[, "fit"])
+real_vals <- as.numeric(co2_ts_real)
+
+idx <- !is.na(real_vals) & !is.na(fit_vals) # Ne garder que les positions sans NA
+erreurs_post <- real_vals[idx] - fit_vals[idx]
+
+rmse <- sqrt(mean(erreurs_post^2))
+mae  <- mean(abs(erreurs_post))
+mape <- mean(abs(erreurs_post / real_vals[idx])) * 100
+biais <- mean(erreurs_post)
+
+cat("Validation a posteriori (1998-2003) : ")
+cat("RMSE :", round(rmse, 4), "ppm\n")
+cat("MAE  :", round(mae,  4), "ppm\n")
+cat("MAPE :", round(mape, 4), "%\n")
+cat("Biais:", round(biais, 4), "ppm\n")
+
+# 4. Graphique des résidus de prédiction
+residus_ts <- ts(erreurs_post, start = c(1998, 1), frequency = 12)
+plot(residus_ts,
+     col = "steelblue", lwd = 1.5,
+     main = "Résidus de prédiction post-validation (1998-2003)",
+     ylab = "Erreur (ppm)", xlab = "Année")
+abline(h = 0, col = "red", lty = 2, lwd = 2)
+abline(h =  2, col = "grey40", lty = 3)
+abline(h = -2, col = "grey40", lty = 3)
+```
+
+Les résultats numériques confirment quantitativement la qualité de la prédiction. Le RMSE de 1.411 ppm et le MAE de 1.237 ppm indiquent que le modèle se trompe en moyenne de moins de 1.5 ppm sur une plage de valeurs allant de 365 à 380 ppm, ce qui représente une erreur relative extrêmement faible. Le MAPE de 0.33% confirme cette précision : moins d'un tiers de pourcent d'erreur relative moyenne, ce qui est remarquable pour une extrapolation sur 6 ans.
+
+Cependant, le biais de 1.237 ppm (égal au MAE) est un point important : il indique que toutes les erreurs sont positives, c'est-à-dire que le modèle sous-estime systématiquement la concentration réelle en CO2 sur toute la période. 
+
+La courbe rouge (données réelles) se situe systématiquement au-dessus de la prédiction verte sur toute la période, ce qui est la traduction visuelle du biais positif identifié numériquement. Néanmoins, les données réelles restent intégralement à l'intérieur de l'intervalle de confiance à 95%, ce qui signifie que cette sous-estimation était statistiquement anticipée par le modèle. L'écart entre prédiction et réalité s'accentue progressivement vers 2003, suggérant une légère accélération de la hausse du CO2 non capturée par le modèle.
+
+Le graphique des résidus révèle une tendance croissante des résidus au fil du temps, passant d'environ 0.3 ppm en 1998 à près de 2.7 ppm en 2003. Cette structure non aléatoire des résidus indique que le modèle ne capture pas l'intégralité de la dynamique de la série sur cet horizon : la tendance réelle s'avère légèrement plus rapide que celle estimée sur la période 1959-1997. En théorie des séries temporelles, des résidus qui ne sont pas centrés sur zéro et qui présentent une tendance constituent un signal de biais systématique croissant, limitant la fiabilité du modèle sur des horizons longs.
+
+En conclusion, la validation a posteriori est globalement satisfaisant. D'un côté, les métriques d'erreur absolue sont faibles (MAPE < 1%) et les données réelles restent dans l'intervalle de confiance, ce qui valide l'utilisation du modèle à court et moyen terme. 
+De l'autre, le biais systématique et la tendance croissante des résidus suggèrent qu'à partir de 2002-2003, le modèle commence à perdre en précision. Cela pourrait s'expliquer par une légère accélération des émissions de CO2 sur cette période, phénomène structurel que le lissage exponentiel ne peut pas anticiper. Pour des horizons de prédiction plus longs, il pourrait être pertinent d'envisager des approches complémentaires telles que les modèles ARIMA. La validation graphique étant concluante, le critère de l'énoncé est satisfait et le recours à d'autres méthodes de lissage n'est pas nécessaire. 
+
